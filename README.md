@@ -1,0 +1,74 @@
+# BOOTH履歴ムービー（非公式）
+
+**BOOTHで買ったもの・贈ったもの・もらったものを、1本の動画にします。**
+
+あなたの購入履歴は**あなたのブラウザから一歩も出ません**。サーバーは使いません。
+
+![ここに動画のGIFかスクショ](docs/preview.png)
+
+---
+
+## 入れかた
+
+### PC（Chrome / Edge / Firefox）
+
+1. **[Tampermonkey](https://www.tampermonkey.net/)** を入れる（無料）
+2. **[このリンクを開く](https://raw.githubusercontent.com/ginrei88/booth-history-video/main/booth-history-video.user.js)** → 「インストール」を押す
+
+### iPhone / iPad（Safari）
+
+1. App Store で **[Userscripts](https://apps.apple.com/jp/app/userscripts/id1463298887)** を入れる（無料）
+2. アプリを開いて、**保存先フォルダ**を決める（iCloud Driveでよい）
+3. 設定 →アプリ→ Safari → 機能拡張 → **Userscripts をオン**、**「すべてのWebサイト」を許可**
+4. Safari で **[このリンク](https://raw.githubusercontent.com/ginrei88/booth-history-video/main/booth-history-video.user.js)** を開く → 拡張のポップアップから「インストール」
+
+### Android
+
+**Firefox** + Tampermonkey で動きます。
+ただし Firefox Android には動画を書き出す機能（WebCodecs）が無いため、
+**mp4ではなく webm になり、動画の長さと同じだけ時間がかかります。**
+Chrome for Android は拡張機能が入らないので使えません。
+
+---
+
+## 使いかた
+
+1. BOOTH にログインした状態で **[購入履歴](https://accounts.booth.pm/orders)** を開く
+2. 「購入履歴」の下に出るボタン **「履歴を動画にする」** を押す
+3. **「① まずこれを押す」** → 1〜2分待つ（履歴・サムネ・もらったものの値段を読みます）
+4. **「② 動画にする」** → mp4 が保存されます
+
+- **サムネを使う**：外すと、色のタイルだけの動画になります
+- **軽くする(720p)**：スマホでは最初からオンになります
+- **長さ**：40〜240秒
+
+---
+
+## 大事なこと
+
+- あなたの購入履歴は**どこにも送信されません**。動画もあなたのPCの中で作られます
+- 商品ファイル（zip等）には**一切触りません**。読むのは履歴のページだけです
+- **動画にはあなたが買った商品のサムネイル画像が入ります。**
+  それぞれの画像は出品者の方の著作物です。**SNSなどに公開するかどうかはご自身でご判断ください。**
+  サムネなしで作りたいときは「サムネを使う」のチェックを外してください
+- 「もらったもの」の金額は、**BOOTHが受け取り日も実額も保持していない**ため、
+  商品ページの**現在の販売価格**から出した目安です。実際に支払われた額ではありません
+
+## 出品者の方へ
+
+ご自身の商品画像について気になる点があれば、Issue でお知らせください。対応します。
+
+---
+
+## 非公式です
+
+本ツールは BOOTH / pixiv の公式ツールではありません。ピクシブ株式会社とは関係ありません。
+BOOTH および pixiv はピクシブ株式会社の登録商標です。
+
+## ライセンス
+
+MIT License（[LICENSE](LICENSE)）。
+
+同梱：[mp4-muxer](https://github.com/Vanilagy/mp4-muxer) v5.2.1（MIT License, Copyright (c) 2023 Vanilagy）
+
+本ソフトウェアは現状有姿で提供されます。利用によって生じたいかなる損害についても作者は責任を負いません。
