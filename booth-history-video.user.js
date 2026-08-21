@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BOOTH履歴ムービー（非公式）
 // @namespace    booth-history-video
-// @version      0.7.1
+// @version      0.8.0
 // @description  BOOTHの購入・ギフト履歴を動画にします。データはあなたのブラウザから出ません。BOOTH/pixivの公式ツールではありません。
 // @match        https://accounts.booth.pm/orders*
 // @match        https://accounts.booth.pm/library*
@@ -86,6 +86,10 @@ const CSS = `
 #bhv-bar .pick label{color:#e6e1d8;}
 #bhv-bar input[type=checkbox]{width:18px;height:18px;}
 #bhv-bar input[type=range]{width:120px;vertical-align:middle;}
+#bhv-bar select{background:#332f2c;color:#fff;border:0;border-radius:6px;padding:8px 6px;
+  font-size:13px;font-family:inherit;-webkit-appearance:none;appearance:none;}
+#bhv-bar select:disabled{opacity:.45;}
+#bhv-bar #bhv-pnote{width:100%;font-size:12px;color:#8a8177;line-height:1.4;}
 #bhv-status{margin-left:auto;font-size:13px;color:#8a8177;}
 #bhv-stage{flex:1;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto;}
 #bhv-cv{max-width:100%;max-height:100%;background:#000;}
@@ -95,7 +99,8 @@ const CSS = `
   #bhv-bar button.wide{min-width:100%;}
   #bhv-status{margin-left:0;width:100%;order:99;font-size:12px;line-height:1.4;}
   #bhv-bar label,#bhv-bar .t{font-size:13px;}
-  #bhv-bar .pick{width:100%;justify-content:space-between;gap:4px;}
+  #bhv-bar .pick,#bhv-bar .range{width:100%;justify-content:space-between;gap:4px;}
+  #bhv-bar select{flex:1 1 auto;font-size:15px;padding:10px 6px;}
   #bhv-bar input[type=range]{width:90px;}
   #bhv-stage{padding:6px;}
 }`;
@@ -110,6 +115,10 @@ function build(){
   +    '<label><input id="bhv-psent" type="checkbox" checked>贈った</label>'
   +    '<label><input id="bhv-precv" type="checkbox" checked>もらった</label>'
   +  '</span>'
+  +  '<span class="t range">期間'
+  +    '<select id="bhv-yfrom" disabled><option value="">最初から</option></select>—'
+  +    '<select id="bhv-yto" disabled><option value="">最後まで</option></select>'
+  +  '</span>'
   +  '<label><input id="bhv-thumb" type="checkbox" checked>サムネを使う</label>'
   +  '<label><input id="bhv-light" type="checkbox">軽くする(720p)</label>'
   +  '<span class="t">長さ <input id="bhv-dur" type="range" min="40" max="240" value="112"><b id="bhv-durv">112</b>秒</span>'
@@ -117,6 +126,7 @@ function build(){
   +  '<button id="bhv-rec" class="go">② 動画にする</button>'
   +  '<button id="bhv-close">閉じる</button>'
   +  '<span id="bhv-status"></span>'
+  +  '<span class="t" id="bhv-pnote" style="display:none"></span>'
   +'</div>'
   +'<div id="bhv-stage"><canvas id="bhv-cv" width="1920" height="1080"></canvas></div>';
   document.body.appendChild(root);
@@ -2070,6 +2080,23 @@ const INTRO=2.5, TAIL=1.8, HOLD=3.0, SENT=9.0, RECV=11.5, YEAR1=2.6, YEAR2=0.62,
    贈ったもの・もらったものは、人に見られたくないことがある（逆に、それだけ出したい人もいる）。
    取り込みのときも同じ選択を使う＝選ばなかったものは、そもそも読みに行かない */
 const PICK={buy:true,sent:true,recv:true};
+/* 期間。買った日・贈った日の「年」で絞る。null＝端まで。
+   絞るのは normalize のところ1か所だけ。壁も年の幕も締めも、そこから作られるので勝手についてくる。
+   ⚠️ もらったものだけは絞れない。受け取った日をBOOTHが持っていないから。
+      黙って全期間ぶんを混ぜると「2024年の記録」に10年ぶんのギフトが並ぶ。だから期間中は出さない */
+const RANGE={from:null,to:null};
+let dataYears=[];      // 絞る前の年ぜんぶ。プルダウンの中身と「絞っているか」の判定に使う
+const inRange=d=>{ const y=d.getFullYear();
+  return (RANGE.from===null||y>=RANGE.from) && (RANGE.to===null||y<=RANGE.to); };
+/* 「絞っている」＝手元にある年のうち1つでも外に落ちること。
+   最初〜最後をわざわざ選んだだけなら絞っていない扱いにする（もらったものが消えないように） */
+function narrowed(){
+  if(RANGE.from===null && RANGE.to===null) return false;
+  if(!dataYears.length) return true;
+  return dataYears.some(y=>(RANGE.from!==null&&y<RANGE.from)||(RANGE.to!==null&&y>RANGE.to));
+}
+function useRecv(){ return PICK.recv && !narrowed(); }
+function rangeLabel(){ return (RANGE.from||'最初')+'〜'+(RANGE.to||'最後'); }
 let rawData=null;      // 読み込んだそのまま。チェックを変えたら、ここから作り直す
 let dataGen=0;         // 作り直した回数。中で作った表（時刻表・年の集計）を捨てる合図
 /* TAIL＝最後のタイルが出きるまで。HOLD＝出きってから次へ行くまでの間。
@@ -2126,16 +2153,29 @@ function outlined(s,x,y,size,color,align='center',weight=600){
 /* 同じURLの画像は1枚だけ読む。normalize の外に置くのは、
    チェックを切り替えて作り直したときに、読み込み済みの画像をそのまま使えるようにするため */
 const imgCache=new Map();
+/* 絞る前の年を数える。中身が変わったときだけプルダウンを作り直す
+   （毎回作り直すと、選んでいる途中で選択が飛ぶ） */
+function scanYears(src){
+  const s=new Set();
+  for(const o of (src.items||[])){
+    const d=new Date((o.datetime||o.date||'').replace(/\//g,'-').replace(' ','T'));
+    if(!isNaN(d)) s.add(d.getFullYear());
+  }
+  const next=[...s].sort((a,b)=>a-b);
+  if(next.join()!==dataYears.join()){ dataYears=next; fillYears(); }
+}
 function normalize(raw){
   const src = Array.isArray(raw) ? {items:raw, received:[], meta:null} : raw;
   rawData = src;
   meta = src.meta||null;
-  received = (PICK.recv ? (src.received||[]) : []).map(o=>({...o,_im:null}));
+  scanYears(src);
+  received = (useRecv() ? (src.received||[]) : []).map(o=>({...o,_im:null}));
   const a=(src.items||[]).map(o=>({
     date:new Date((o.datetime||o.date||'').replace(/\//g,'-').replace(' ','T')),
     title:o.title||'(無題)', shop:o.shop||'', price:+o.price||0,
     type:o.type||'buy', img:o.img||null, _im:null
   })).filter(o=>!isNaN(o.date))
+     .filter(o=> inRange(o.date))
      .filter(o=> o.type==='gift_sent' ? PICK.sent : PICK.buy);
   a.sort((x,y)=>x.date-y.date);
   let loaded=0, need=0;
@@ -2292,7 +2332,8 @@ function drawIntro(sec,INTRO){
   const x=W*0.13, y=H*0.60;
   if(items.length){
     const a=items[0].date, b=items[items.length-1].date;
-    txt(`${a.getFullYear()} — ${b.getFullYear()}`, x, y-124, 29, C.dim,'left',300,3);
+    txt(a.getFullYear()===b.getFullYear() ? String(a.getFullYear())
+        : `${a.getFullYear()} — ${b.getFullYear()}`, x, y-124, 29, C.dim,'left',300,3);
   }
   txt(headline(), x, y, 96, C.ink,'left',600,2,'m');
   rule(x, y+42, 148*ease((sec-0.35)/1.0), C.sent, 3);
@@ -2399,7 +2440,8 @@ function buildTicks(span){
    そうなる前に、幕のほうを一緒に縮める */
 function times(){
   const hasB=buys.length>0, ny=yearRows().length;
-  const YEARS=ny ? clamp(YEAR1+ny*YEAR2, 4.5, 14) : 0;
+  /* 年が1つしか無い＝期間で1年に絞った人。棒が1本だけの幕は、締めと同じ数字が並ぶだけなので出さない */
+  const YEARS=ny>1 ? clamp(YEAR1+ny*YEAR2, 4.5, 14) : 0;
   const fixed=INTRO+(hasB?TAIL+HOLD:0)+(sents.length?SENT:0)+(received.length?RECV:0)+YEARS+OUTRO;
   const need=hasB?Math.max(DUR*0.30,3):0;
   const k=(DUR-fixed)>=need ? 1 : Math.max((DUR-need)/fixed, 0.12);
@@ -2492,7 +2534,9 @@ function drawYearsAct(t,dur){
   g.globalAlpha=1;
 
   const n=rows.length, top=278, bottom=H-136;
-  const rh=Math.min((bottom-top)/n, 74);
+  /* 行の高さの上限。年が少ない人（期間で絞った人）は大きくする。
+     74のままだと3年で画面の下半分が空く */
+  const rh=Math.min((bottom-top)/n, n>=8 ? 74 : 74+(8-n)*9);
   const y0=top+((bottom-top)-rh*n)/2;
   const fs=clamp(rh*0.50,13,36);
   const max=Math.max.apply(null,rows.map(r=>r.total).concat([1]));
@@ -2587,7 +2631,8 @@ function shopsOf(){ return new Set(items.map(i=>i.shop).filter(Boolean)).size; }
    一部だけを出しているのに送料込みの総額を出すと、足し算が合わなくなる */
 function grandTotal(){
   const mp=meta&&meta.pick;
-  const whole = PICK.buy && PICK.sent && (!mp || (mp.buy!==false && mp.sent!==false));
+  const whole = PICK.buy && PICK.sent && !narrowed()
+             && (!mp || (mp.buy!==false && mp.sent!==false));
   if(whole && meta && meta.paidTotal) return meta.paidTotal;
   return items.reduce((a,b)=>a+b.price,0);
 }
@@ -2693,8 +2738,10 @@ function recordRealtime(){
 /* ===== ボタン ===== */
 const el=id=>document.getElementById('bhv-'+id);
 const on=(id,fn)=>{ const e=el(id); if(e) e.onclick=fn; };
-function setBusy(b){ for(const id of ['rec','play','grab','demo','dur','thumb','light','pbuy','psent','precv'])
-  { const e=el(id); if(e) e.disabled=b; } }
+function setBusy(b){ for(const id of ['rec','play','grab','demo','dur','thumb','light',
+                                      'pbuy','psent','precv','yfrom','yto'])
+  { const e=el(id); if(e) e.disabled=b; }
+  if(!b){ syncRecvBox(); const y=el('yfrom'); if(y&&dataYears.length<2){ y.disabled=true; el('yto').disabled=true; } } }
 
 on('demo',()=>{ items=normalize(demo()); S.textContent=items.length+'点（デモ）'; start(); });
 if(el('file')) el('file').onchange=e=>{
@@ -2728,23 +2775,62 @@ function missingPick(){
   if(PICK.recv && mp.recv===false) ng.push('もらったもの');
   return ng.length?ng.join('と'):null;
 }
-for(const id of ['pbuy','psent','precv']){
-  const e=el(id); if(!e) continue;
-  e.onchange=()=>{
-    readPick();
-    if(!rawData){ frame(0); return; }
-    items=normalize(rawData);
-    const miss=missingPick();
-    if(!items.length && !received.length){       // 選んだものが手元に1件も無い
+/* ===== 期間を選ぶ =====
+   プルダウンの中身は、読み込んだデータに実際にある年だけ。
+   存在しない年を選ばせて「0点でした」と言われるのが一番腹立たしい */
+function readRange(){
+  const v=id=>{ const e=el(id); const n=e?+e.value:0; return n?n:null; };
+  let a=v('yfrom'), b=v('yto');
+  if(a!==null && b!==null && a>b){            // 逆に選ばれたら、黙って入れ替える
+    const t=a; a=b; b=t;
+    const ea=el('yfrom'), eb=el('yto'); if(ea) ea.value=a; if(eb) eb.value=b;
+  }
+  RANGE.from=a; RANGE.to=b;
+}
+function fillYears(){
+  for(const q of [['yfrom','最初から','from'],['yto','最後まで','to']]){
+    const e=el(q[0]); if(!e) continue;
+    const cur=RANGE[q[2]];
+    e.innerHTML='<option value="">'+q[1]+'</option>'
+      +dataYears.map(y=>'<option value="'+y+'">'+y+'年</option>').join('');
+    if(cur!==null && dataYears.indexOf(cur)>=0) e.value=String(cur);
+    else { e.value=''; RANGE[q[2]]=null; }    // 読み直して消えた年は、選択ごと落とす
+    e.disabled=dataYears.length<2;            // 1年しか無い人に選ばせても意味が無い
+  }
+  syncRecvBox();
+}
+/* 期間で絞っているあいだ、「もらった」は押せなくする。
+   チェックは外さない（期間を戻したら、そのまま戻ってくるように） */
+function syncRecvBox(){
+  const e=el('precv'), n=el('pnote'), on=narrowed();
+  if(e){ e.disabled=on; if(e.parentElement) e.parentElement.style.opacity=on?'.45':''; }
+  if(n){ n.textContent=on?'※「もらったもの」は受け取った日がBOOTHに残っていないので、期間では絞れません':'';
+         n.style.display=on?'':'none'; }
+}
+
+function applyPick(){
+  readPick(); readRange(); syncRecvBox();
+  if(!rawData){ frame(0); return; }
+  items=normalize(rawData);
+  const miss=missingPick();
+  if(!items.length && !received.length){       // 選んだものが手元に1件も無い
+    if(narrowed()){
+      HINT='その期間には、1件もありませんでした';
+      HINT2='「期間」を広げてください';
+    } else {
       HINT='選んだものは、1件もありませんでした';
       HINT2=miss ? miss+'は読み込んでいません。もう一度読んでください'
                  : '「出すもの」のチェックを見直してください';
-      S.textContent=HINT2; frame(0); return;
     }
-    S.textContent = miss ? miss+'は読み込んでいません。もう一度読んでください'
-                         : items.length+'点 / もらった'+received.length+'点';
-    start();
-  };
+    S.textContent=HINT2; frame(0); return;
+  }
+  S.textContent = miss ? miss+'は読み込んでいません。もう一度読んでください'
+                       : items.length+'点 / もらった'+received.length+'点'
+                         +(narrowed()?'（'+rangeLabel()+'）':'');
+  start();
+}
+for(const id of ['pbuy','psent','precv','yfrom','yto']){
+  const e=el(id); if(e) e.onchange=applyPick;
 }
 
 let recOK=false;
@@ -2978,11 +3064,13 @@ const gb=document.getElementById('bhv-grab');
 gb.onclick=async()=>{
   gb.disabled=true; gb.textContent='読み込み中…'; gb.style.opacity='.55'; gb.style.cursor='default';
   const step=m=>{ S.textContent=m; note('BOOTHを読んでいます…', m); };   // 画面の真ん中に大きく出す
-  readPick();                       // 選ばなかったものは、そもそも読みに行かない
+  readPick(); readRange();          // 選ばなかったものは、そもそも読みに行かない
+  /* 期間で絞っているときは「もらったもの」を出せない＝読む必要も無い。
+     読まなければ、そのぶん速く終わるし、手元にも作らない */
   step('はじめました');
   try{
-    const data=await collectBooth(step, {buy:PICK.buy, sent:PICK.sent, recv:PICK.recv});
-    if(PICK.recv && (data.received||[]).length){
+    const data=await collectBooth(step, {buy:PICK.buy, sent:PICK.sent, recv:useRecv()});
+    if(useRecv() && (data.received||[]).length){
       note('BOOTHを読んでいます…','もらったものの値段を調べています');
       await addReceivedPrices(data, m=>{ S.textContent=m; note('BOOTHを読んでいます…', m); });
     }
