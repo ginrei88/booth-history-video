@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BOOTH履歴ムービー（非公式）
 // @namespace    booth-history-video
-// @version      0.7.0
+// @version      0.7.1
 // @description  BOOTHの購入・ギフト履歴を動画にします。データはあなたのブラウザから出ません。BOOTH/pixivの公式ツールではありません。
 // @match        https://accounts.booth.pm/orders*
 // @match        https://accounts.booth.pm/library*
@@ -2927,7 +2927,7 @@ const gmText = url => new Promise((res,rej)=>{
     onerror: () => rej(new Error('通信できません')), ontimeout: () => rej(new Error('時間切れ')) });
 });
 async function addReceivedPrices(data, report){
-  const list=(data.received||[]).filter(o=>o && /^https:\/\/[a-z0-9.-]+\.?booth\.pm\//.test(o.url||''));
+  const list=(data.received||[]).filter(o=>o && /^https:\/\/([a-z0-9-]+\.)?booth\.pm\//.test(o.url||''));
   if(!list.length) return;
   let lo=0, hi=0, ok=0, gone=0, n=0;
   const one=async o=>{
