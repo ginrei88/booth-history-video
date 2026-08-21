@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BOOTH履歴ムービー（非公式）
 // @namespace    booth-history-video
-// @version      0.8.0
+// @version      0.8.1
 // @description  BOOTHの購入・ギフト履歴を動画にします。データはあなたのブラウザから出ません。BOOTH/pixivの公式ツールではありません。
 // @match        https://accounts.booth.pm/orders*
 // @match        https://accounts.booth.pm/library*
@@ -121,7 +121,7 @@ function build(){
   +  '</span>'
   +  '<label><input id="bhv-thumb" type="checkbox" checked>サムネを使う</label>'
   +  '<label><input id="bhv-light" type="checkbox">軽くする(720p)</label>'
-  +  '<span class="t">長さ <input id="bhv-dur" type="range" min="40" max="240" value="112"><b id="bhv-durv">112</b>秒</span>'
+  +  '<span class="t">長さ <input id="bhv-dur" type="range" min="40" max="240" value="40"><b id="bhv-durv">40</b>秒</span>'
   +  '<button id="bhv-play">もう一度見る</button>'
   +  '<button id="bhv-rec" class="go">② 動画にする</button>'
   +  '<button id="bhv-close">閉じる</button>'
@@ -2074,7 +2074,9 @@ if (typeof module === "object" && typeof module.exports === "object") Object.ass
 
 const W=1920,H=1080, cv=document.getElementById('bhv-cv'), g=cv.getContext('2d');
 const S=document.getElementById('bhv-status');
-let items=[], buys=[], sents=[], received=[], meta=null, recorder=null, chunks=[], raf=0, t0=0, DUR=112;
+let items=[], buys=[], sents=[], received=[], meta=null, recorder=null, chunks=[], raf=0, t0=0, DUR=40;
+/* 初期値は40秒＝つまみの下限。長いと最後まで見てもらえない。
+   伸ばしたい人はつまみを動かせばいい（240秒まで） */
 const INTRO=2.5, TAIL=1.8, HOLD=3.0, SENT=9.0, RECV=11.5, YEAR1=2.6, YEAR2=0.62, OUTRO=12.0;
 /* 何を動画に出すか。使う人が選ぶ。
    贈ったもの・もらったものは、人に見られたくないことがある（逆に、それだけ出したい人もいる）。
